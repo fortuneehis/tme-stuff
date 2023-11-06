@@ -78,8 +78,14 @@ app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
   res.sendStatus(200);
 });
 
-bot.onText(/^((\+|\*|\/|\-)[0-9]+|history|total|clear)/, async (message) => {
+bot.on("text", async (message) => {
   let text = message.text.trim();
+
+  if (!/^((\+|\*|\/|\-)[0-9]+|history|total|clear)/.test(text)) {
+    console.log("not working");
+    return;
+  }
+
   const chatId = message.chat.id;
   const senderId = message.from.id;
 
