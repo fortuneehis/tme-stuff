@@ -79,7 +79,6 @@ app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
 });
 
 bot.on("text", async (message) => {
-  if (!message.group_chat_created) return;
   let text = message.text.trim();
   const chatId = message.chat.id;
   const senderId = message.sender_chat.id;
