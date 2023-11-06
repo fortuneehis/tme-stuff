@@ -13,14 +13,6 @@ const app = express();
 
 app.use(express.json());
 
-const https = createServer(
-  {
-    key: fs.readFileSync("./localhost-key.pem"),
-    cert: fs.readFileSync("./localhost.pem"),
-  },
-  app
-);
-
 const ACTIONS = {
   CLEAR: "CLEAR",
   HISTORY: "HISTORY",
@@ -177,7 +169,15 @@ ${/^\d+$/.test(text) ? "" : text} = ${payload}`;
   bot.sendMessage(chatId, result);
 });
 
-const server = IS_DEV ? https : app;
+const server = IS_DEV
+  ? createServer(
+      {
+        key: fs.readFileSync("./localhost-key.pem"),
+        cert: fs.readFileSync("./localhost.pem"),
+      },
+      app
+    )
+  : app;
 
 server.listen(3000, () => {
   console.log("Listening...");
