@@ -83,9 +83,11 @@ bot.on("text", async (message) => {
   const chatId = message.chat.id;
   const senderId = message.from.id;
 
-  const isAdmin =
-    (await bot.getChatMember(chatId, senderId)).status === "administrator";
+  const member = await bot.getChatMember(chatId, senderId);
 
+  console.log(member);
+
+  if (member.status !== "administrator" && member.status !== "creator") return;
   if (!isAdmin) return;
 
   let result = "";
