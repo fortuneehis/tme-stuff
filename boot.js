@@ -81,7 +81,7 @@ app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
 bot.on("text", async (message) => {
   let text = message.text.trim();
   const chatId = message.chat.id;
-  const senderId = message.sender_chat.id;
+  const senderId = message.from.id;
 
   const isAdmin =
     (await bot.getChatMember(chatId, senderId)).status === "administrator";
