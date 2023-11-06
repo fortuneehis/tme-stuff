@@ -78,7 +78,7 @@ app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
   res.sendStatus(200);
 });
 
-bot.on("text", async (message) => {
+bot.onText(/^(\+|\*|\/|\-)/, async (message) => {
   let text = message.text.trim();
   const chatId = message.chat.id;
   const senderId = message.from.id;
