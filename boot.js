@@ -138,7 +138,7 @@ ${history.join("\n")}
 
         const { total, history } = getInvoiceState(chatId, invoiceNumber);
 
-        text = text.replace(invoiceRegexp, "").replaceAll(/\$/gi, "").trim();
+        text = text.replace(invoiceRegexp, "").replace(/\$/gi, "").trim();
 
         if (!/^(\+|\*|\/|\-)/.test(text)) {
           result =
