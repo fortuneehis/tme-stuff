@@ -1,7 +1,7 @@
 const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const calculator = require("basic-jsmath");
-const { createServer } = require("node:https");
+const { createServer } = require("https");
 const fs = require("fs");
 const dotEnv = require("dotenv");
 
