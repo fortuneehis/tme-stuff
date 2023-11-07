@@ -4,68 +4,19 @@ const calculator = require("basic-jsmath");
 const { createServer } = require("https");
 const fs = require("fs");
 const dotEnv = require("dotenv");
+const {
+  typeorm,
+  getInvoices,
+  chatExists,
+  getChat,
+  deleteChat,
+  getInvoice,
+  addInvoice,
+} = require("./db");
 
 dotEnv.config();
 
 const IS_DEV = process.env.NODE_ENV === "development";
-
-const app = express();
-
-app.use(express.json());
-
-const ACTIONS = {
-  CLEAR: "CLEAR",
-  HISTORY: "HISTORY",
-  TOTAL: "TOTAL",
-};
-
-const CHAT_STATE = new Map();
-
-const INVOICE_STATE = new Map();
-
-const getInvoiceState = (chatId, invoiceNumber) => {
-  const invoiceNumbers = CHAT_STATE.has(chatId) ? CHAT_STATE.get(chatId) : [];
-
-  invoiceNumbers.push(invoiceNumber);
-
-  CHAT_STATE.set(chatId, Array.from(new Set(invoiceNumbers)));
-
-  return INVOICE_STATE.has(invoiceNumber)
-    ? INVOICE_STATE.get(invoiceNumber)
-    : {
-        total: 0,
-        history: "",
-      };
-};
-
-const getHistory = (chatId) => {
-  const invoiceNumbers = CHAT_STATE.get(chatId);
-
-  if (!invoiceNumbers) return "";
-
-  return invoiceNumbers.map((invoiceNumber) => {
-    const { history, total } = getInvoiceState(chatId, invoiceNumber);
-    return `Total for ${invoiceNumber}: ${history} = ${total}`;
-  });
-};
-
-const getTotal = (chatId) => {
-  const invoiceNumbers = CHAT_STATE.get(chatId);
-
-  if (!invoiceNumbers) return 0;
-
-  return invoiceNumbers.reduce((acc, curr) => {
-    let total = 0;
-
-    const state = INVOICE_STATE.get(curr);
-
-    if (state) {
-      total = state.total;
-    }
-
-    return acc + total;
-  }, 0);
-};
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
   webHook: true,
@@ -73,123 +24,153 @@ const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
 
 bot.setWebHook(process.env.WEBHOOK_URL);
 
-app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
+typeorm()
+  .initialize()
+  .then(() => {
+    const app = express();
 
-bot.on("text", async (message) => {
-  let text = message.text.trim();
+    app.use(express.json());
 
-  if (!/^((\+|\*|\/|\-)[0-9]+|history|total|clear)/.test(text)) {
-    console.log("not working");
-    return;
-  }
+    const ACTIONS = {
+      CLEAR: "CLEAR",
+      HISTORY: "HISTORY",
+      TOTAL: "TOTAL",
+    };
 
-  const chatId = message.chat.id;
-  const senderId = message.from.id;
+    const getHistory = async (chatId) => {
+      const invoices = await getInvoices(chatId);
+      if (invoices.length === 0) return "";
 
-  const member = await bot.getChatMember(chatId, senderId);
+      return invoices.map((invoice) => {
+        return `Total for ${invoice.number}: ${invoice.history} = ${invoice.total}`;
+      });
+    };
 
-  if (member.status !== "administrator" && member.status !== "creator") return;
+    const getTotal = async (chatId) => {
+      const invoices = await getInvoices(chatId);
+      if (invoices.length === 0) return 0;
 
-  let result = "";
+      return invoices.reduce((acc, curr) => {
+        return acc + curr.total;
+      }, 0);
+    };
 
-  switch (text) {
-    case ACTIONS.TOTAL.toLowerCase():
-      const total = getTotal(chatId);
+    app.post("/bot/a33da730-b458-49d7-8ba3-126c55356660", async (req, res) => {
+      bot.processUpdate(req.body);
+      res.sendStatus(200);
+    });
 
-      const historyState = getHistory(chatId);
+    bot.on("text", async (message) => {
+      let text = message.text.trim();
 
-      result =
-        typeof historyState === "string" &&
-        total === 0 &&
-        historyState.trim() === ""
-          ? "There's no history to calculate the total"
-          : `History: 
+      if (!/^((\+|\*|\/|\-)[0-9]+|history|total|clear)/.test(text)) {
+        return;
+      }
+
+      const telegram_chat_id = message.chat.id;
+      const senderId = message.from.id;
+      const chat = await getChat(telegram_chat_id);
+      const chatId = chat.id;
+
+      const member = await bot.getChatMember(telegram_chat_id, senderId);
+
+      if (member.status !== "administrator" && member.status !== "creator")
+        return;
+
+      let result = "";
+
+      switch (text) {
+        case ACTIONS.TOTAL.toLowerCase():
+          const total = await getTotal(chatId);
+
+          const historyState = await getHistory(chatId);
+
+          result =
+            typeof historyState === "string" &&
+            total === 0 &&
+            historyState.trim() === ""
+              ? "There's no history to calculate the total"
+              : `History: 
 ${historyState.join("\n")}
 
 Sum Total = ${total}
 `;
 
-      break;
-    case ACTIONS.CLEAR.toLowerCase():
-      if (CHAT_STATE.has(chatId)) {
-        const chatState = CHAT_STATE.get(chatId);
-        chatState.forEach((invoiceNumber) => {
-          INVOICE_STATE.delete(invoiceNumber);
-        });
-        CHAT_STATE.delete(chatId);
-      }
-      result = "History cleared! 🎉";
-      break;
+          break;
+        case ACTIONS.CLEAR.toLowerCase():
+          if (await chatExists(chatId)) {
+            await deleteChat(chatId);
+          }
 
-    case ACTIONS.HISTORY.toLowerCase():
-      const history = getHistory(chatId);
+          result = "History cleared! 🎉";
+          break;
 
-      result =
-        typeof history === "string" && history.trim() === ""
-          ? "There's no history"
-          : `History: 
+        case ACTIONS.HISTORY.toLowerCase():
+          const history = await getHistory(chatId);
+
+          result =
+            typeof history === "string" && history.trim() === ""
+              ? "There's no history"
+              : `History: 
 ${history.join("\n")}
         `;
-      break;
-
-    default:
-      try {
-        const chatId = message.chat.id;
-
-        const invoiceRegexp = /\#\d+/;
-        const invoiceNumber = text.match(invoiceRegexp)?.[0];
-
-        if (!invoiceNumber) {
-          result = "Invoice number is required!";
           break;
-        }
 
-        const { total, history } = getInvoiceState(chatId, invoiceNumber);
+        default:
+          try {
+            const invoiceRegexp = /\#\d+/;
+            const invoiceNumber = text.match(invoiceRegexp)?.[0];
 
-        text = text.replace(invoiceRegexp, "").replace(/\$/gi, "").trim();
+            if (!invoiceNumber) {
+              result = "Invoice number is required!";
+              break;
+            }
 
-        if (!/^(\+|\*|\/|\-)/.test(text)) {
-          result =
-            "Your input should be prefixed with an operation like : +,-,*,/";
-          break;
-        }
+            const { total, history } = await getInvoice(chatId, invoiceNumber);
+            text = text.replace(invoiceRegexp, "").replace(/\$/gi, "").trim();
 
-        let payload = calculator.parse(`${total.toString()}${text}`);
+            if (!/^(\+|\*|\/|\-)/.test(text)) {
+              result =
+                "Your input should be prefixed with an operation like : +,-,*,/";
+              break;
+            }
 
-        payload = calculator.execute(payload, true).toFixed();
+            let payload = calculator.parse(`${total.toString()}${text}`);
 
-        INVOICE_STATE.set(invoiceNumber, {
-          total: Number(payload),
-          history: `${history}${text}`,
-        });
+            payload = calculator.execute(payload, true).toFixed();
 
-        const { total: new_total } = getInvoiceState(chatId, invoiceNumber);
+            const { total: new_total } = await addInvoice(chatId, {
+              number: invoiceNumber,
+              total: Number(payload),
+              history: `${history}${text}`,
+            });
 
-        result = `Current total for ${invoiceNumber} is ${new_total}:
+            result = `Current total for ${invoiceNumber} is ${new_total}:
 ${/^\d+$/.test(text) ? "" : text} = ${payload}`;
-      } catch (err) {
-        console.log(err);
-        result = "Please check your message 😐";
+          } catch (err) {
+            console.log(err);
+            result = "Please check your message 😐";
+          }
+          break;
       }
-      break;
-  }
 
-  bot.sendMessage(chatId, result);
-});
+      bot.sendMessage(telegram_chat_id, result);
+    });
 
-const server = IS_DEV
-  ? createServer(
-      {
-        key: fs.readFileSync("./localhost-key.pem"),
-        cert: fs.readFileSync("./localhost.pem"),
-      },
-      app
-    )
-  : app;
+    const server = IS_DEV
+      ? createServer(
+          {
+            key: fs.readFileSync("./localhost-key.pem"),
+            cert: fs.readFileSync("./localhost.pem"),
+          },
+          app
+        )
+      : app;
 
-server.listen(3000, () => {
-  console.log("Listening...");
-});
+    server.listen(3000, () => {
+      console.log("Listening...");
+    });
+  })
+  .catch((err) => {
+    console.log("Could not connect to DB", err);
+  });
